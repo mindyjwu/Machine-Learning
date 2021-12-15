@@ -1,0 +1,458 @@
+### Load the dataset here ###
+import pandas as pd
+import numpy as np
+import pandas as pd
+from numpy.linalg import inv
+from sklearn.datasets import load_boston
+from statsmodels.regression.linear_model import OLS
+from tqdm import tqdm
+import autograd.numpy as np
+import matplotlib.pyplot as plt
+from autograd import grad, elementwise_grad
+
+!wget https://web.stanford.edu/~hastie/ElemStatLearn/datasets/prostate.data
+URL = "https://web.stanford.edu/~hastie/ElemStatLearn/datasets/prostate.data"
+
+columns = ['lcavol', 'lweight', 'age', 'lbph', 'svi', 'lcp', 'gleason','pgg45','lpsa','train']
+#df = pd.read_csv(URL,  sep='\', engine='python')
+df = pd.read_csv(URL, header= None, names = columns)
+df.shape
+df.head()
+
+
+
+#columns = ['lcavol', 'lweight', 'age', 'lbph', 'svi', 'lcp', 'gleason','pgg45','lpsa','train']
+#df = pd.read_csv(URL, header= None, names = columns, sep='\')
+
+df =  pd.read_csv(URL,  sep='\t', engine='python',index_col=0)
+
+df.head()
+
+
+#trained_df = [{'train':1}] 
+#validation_df = [{'train':0}]
+
+#print("Original data: ", df.features.shape)
+#print("Train dataset shape: ", train_df.features.shape)
+#print("Validation dataset shape:", validation_df.features.shape)
+
+
+# Split data into train/validation/test sets
+# 67 observations were used as the "training set" + 30 as the test set
+
+train_df = df.loc[df.train == 'T'].drop(columns=['lpsa', "train"])
+train_y = df.loc[df.train == 'T']["lpsa"]
+valid_df = df.loc[df.train == 'F'].drop(columns=['lpsa', "train"])
+valid_y = df.loc[df.train == 'F']["lpsa"]
+print(train_df)
+
+#print("training set size: ",train_df.shape, " validation set size: ", test_df.shape)
+
+valid_df.head()
+
+
+#create a function that normalize the dataset
+def normalized(df):
+  return (df - df.mean())/df.std()
+
+
+
+normalized_valid_df = normalized(valid_df)
+normalized_valid_df
+normalized_train_df = normalized(train_df)
+normalized_train_df
+
+
+
+normalized_valid_y = normalized(valid_y)
+normalized_valid_y
+normalized_train_y = normalized(train_y)
+normalized_train_y
+
+
+### Your model implementation and the two solutions go here ###
+
+# calculate lpsa from the coefficients
+# Find the closed form solution and report the numbers on the validation set.
+# Formula: coeffs = inv(X.transpose().dot(X)).dot(X.transpose()).dot(y)
+
+# create a closed-form solution
+def LinearRegression (X,Y):
+  w_coeffs = inv(X.transpose().dot(X)).dot(X.transpose()).dot(Y)
+  coeffs_df = pd.DataFrame({'coeffs': coeffs}, 
+                         index = ["lcavol", "lweight", "age", "lbph",
+                                   "svi", "lcp", "gleason","pgg45"] )
+  c = np.mean(np.dot(X,w_coeffs) - Y)
+  return coeffs, c, coeffs_df 
+
+print("This is the closed form parameter vector B :")
+w_lr, c_lr, coeffs_df  = LinearRegression(normalized_train_df, normalized_train_y)
+LinearRegression(normalized_train_df, normalized_train_y)
+
+
+
+#report difference in the two modeling set
+
+# create a predictive model 
+def predicted(X, coeffs, c):
+  predict = np.dot(X, coeffs)
+  return predict + c_lr
+
+#create a function for the residual sum of squares
+def RSS(y, y_hat):
+  rss = (y - y_hat).T @ (y - y_hat)
+  return rss
+
+# Find another solution using LinearRegression module of scikit-learn and report any difference in numbers
+
+from sklearn.linear_model import LinearRegression
+
+linear_model = LinearRegression()
+linear_model.fit(normalized_train_df, normalized_train_y)
+
+print("This is the sklearn Linear Regression: ")
+linear_model.coef_
+
+
+
+print("The another closed form solution using Linear regression RSS")
+print(RSS(normalized_valid_y,predicted(normalized_valid_df, coeffs, c)))
+print("The Linear Regression from scikit-learn RSS")
+RSS(normalized_valid_y, linear_model.predict(normalized_valid_df))
+
+
+
+
+### Your ridge regression code and the plotting code goes here ##
+from sklearn.datasets import make_regression
+from matplotlib import pyplot as plt
+import numpy as np
+from sklearn.linear_model import Ridge
+
+# set a value for lambda which impact the regularization of the data, we set as 1 which is same as logistic regression
+lambda_list = [0,1,2,3,4,5,6,7,8,9]
+X = normalized_train_df
+n, m = X.shape
+I = np.identity(m)
+
+for per_lambda in lambda_list:
+  w_ridge = np.dot(np.dot(np.linalg.inv(np.dot(X.T, X) + per_lambda * I), X.T), normalized_train_y)
+  regression_df = pd.DataFrame({'Ridge Regression coeffs': w}, 
+                         index = ["lcavol", "lweight", "age", "lbph",
+                                   "svi", "lcp", "gleason","pgg45"] )
+
+ax = plt.gca()
+
+ax.plot(lambda_list, w_ridge, label=train_df.columns)
+plt.xlabel('λ')
+plt.ylabel('Weights')
+plt.title('Weights vs lambdas')
+plt.legend()
+plt.show()
+
+
+#ridge_reg = linear_model.Ridge()
+#print("Ridge Regression")
+#print("----------------")
+#model_1, mse_1, r_sq_1 = run_model(ridge_reg, X_train, Y_train, x_test, y_test)
+
+
+ax = plt.gca()
+
+ax.plot(ridge_df, ridge_w)
+plt.xlabel('effective df(λ)')
+plt.ylabel('weights')
+plt.title('Ridge effective degrees of freedom')
+plt.show()
+
+
+### Your lasso regression code and the plotting code goes here ###
+from sklearn import datasets
+from sklearn.linear_model import Lasso
+from sklearn.model_selection import train_test_split
+
+shrinkage = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+weights = []
+
+def lasso_loss(w, shrinkage):
+    X = normalized_train_df.to_numpy()
+    y = normalized_train_y.to_numpy()
+    y_hat = predicted(X, w, 0)
+    loss1 = np.mean((y_hat - y)**2)
+    loss2 = shrinkage * np.sum(abs(w))
+    return -(loss1 + loss2)
+
+for s in tqdm(shrinkage):
+        
+    w_lasso = np.zeros(8)
+    d_loss = grad(lasso_loss)
+    for i in range(3000):
+        change = d_loss(w_lasso, s) * (1e-2/(i+1))
+        w_lasso = w_lasso + change
+    
+    weights.append(w_lasso)
+
+# Create an instance of Lasso Regression implementation
+#lasso = Lasso(alpha=1.0)
+# Fit the Lasso model
+#lasso.fit(X_train, Y_train)
+# Create the model score
+#lasso.score(X_test, Y_test), lasso.score(X_train, Y_train)
+
+#lasso_reg = linear_model.Lasso(alpha=0.1)
+#print("Lasso Regression")
+#print("----------------")
+#model_1, mse_1, r_sq_1 = run_model(lasso_reg, X_train, Y_train, x_test, y_test)
+
+
+
+# Gradient Descent
+
+
+from scipy.stats import multivariate_normal as mvn
+
+"""
+Perform a fixed number of iterations of gradient descent on a function using a fixed learning rate. 
+
+Input:
+    fun : function handle: function that takes in a numpy array of shape (d,) and returns a float
+    x0  : initial point: numpy array of shape (d,)
+    lr  : fixed learning rate: a positive float
+    iterations : number of iterations to perform: int
+    
+Return:
+    x   : minimizer to fun: numpy array of shape (d,)
+"""
+def gd_fixed(fun, x0, lr):
+    
+
+    x0 = -lr*fun(x0)
+        
+    return x0
+    
+    
+    
+    """
+Perform a fixed number of iterations of gradient descent on a function using a variable learning rate. 
+
+Input:
+    fun : function handle: function that takes in a numpy array of shape (d,) and returns a float
+    x0  : initial point: numpy array of shape (d,)
+    lr  : initial learning rate: a positive float
+    iterations : number of iterations to perform: int
+    
+Return:
+    x   : minimizer to fun: numpy array of shape (d,)
+"""
+def gd_variable(fun, x0, lr, iterations):
+    
+
+    x0 = -(lr/(iterations+1))*fun(x0)
+    
+    return x0
+    
+    
+    
+    
+  # Logistic Regression
+  
+  
+  """
+Evaluate the logistic unit h(x; w) on each point x in the dataset X (each row is a different data point). This code 
+should be vectorized for efficient computation (i.e., no for loops).
+
+Input:
+    w: weight vector: numpy array of shape (d,) where d is the dimension
+    X: data: numpy array of shape (n,d) where n is the number of data points
+
+Return:
+    logits : h(x;w): a numpy array of shape (n,) that has the values 
+"""
+def logistic_unit(X, w):
+    # TO DO:
+    h = 1/(1+np.exp(X @-w.T))
+    return h
+    
+    
+    
+    
+"""
+Compute the loss function using the formula you derived.  This code does not need to be vectorized and you
+may use the logistic_unit function.
+
+Input:
+    w : weight vector: numpy array of shape (d+1,) (remember that x_0 = 1)
+    X : dataset features: numpy array of shape (n,d)
+    y : dataset targets: numpy array of shape (n,) contains only 0's or 1's
+
+Return:
+    J : loss of w given X,y: float
+"""
+def loss(w, X, y):
+    # TO DO:
+    log_1 = np.log(logistic_unit(X, w))
+    log_2 = np.log(1- logistic_unit(X, w))
+    #set loss of w as zero
+    J = 0
+    index = 0
+    for i, j in zip(log_1, log_2):
+      J = -np.sum(y[index]*i +(1-y[index])*j)
+
+    return J
+    
+    
+    
+# We first generate some fake data.
+np.random.seed(2) # Don't change the random seed.
+data = make_data()
+X = data[:,:-1] # Features
+y = data[:,-1]  # Labels
+
+# We'll also augment the data so that x_0 = 1 for the intercept term.
+X = np.append(np.ones((len(X), 1)), X, axis = 1)
+
+
+
+## Your part starts here.
+split = int(len(X)// 2.5)
+train_X = X[:split].flatten
+train_X = train_X()
+train_y = y[:split].flatten
+
+#print(type(train_X))
+
+valid_X = X[split:2*split]
+valid_y = y[split:2*split]
+
+X_test = X[2*split:] 
+y_test = y[2*split:]
+
+
+
+iterations = 5000        # Lots of iterations to see the training error go down.
+m = 10                   # Get the loss every m iterations.
+
+# TO DO: Set the learning rate.
+lr = 0.003                # You choose this value, try something small.
+
+
+
+## Store the loss values in these arrays.
+# Fixed learning rate.
+train_loss_fixed = np.zeros(iterations//m)
+val_loss_fixed = np.zeros(iterations//m)
+
+# Variable learning rate.
+train_loss_var = np.zeros(iterations//m)
+val_loss_var = np.zeros(iterations//m)
+
+
+# TO DO: Set the initial values, either randomly or some fixed value.
+w1 = np.zeros(train_X.shape[0])
+w2 = np.zeros(train_X.shape[0])
+
+# TO DO: Write the loss function as a function of the parameter only.
+J = grad(lambda w: loss(w, train_X, train_y))
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+z = np.dot(X, w)
+h = sigmoid(z)
+
+def loss(h, y):
+    return (-y * np.log(h) - (1 - y) * np.log(1 - h)).mean()
+
+
+
+for i in range(iterations):
+    # TO DO: Get the updated parameters from gradient descent with a fixed learning rate.
+    w1 = gd_fixed(J, w1, lr)
+    # TO DO: Get the updated parameters from gradient descent with a variable learning rate.
+    # Hint: You may either modify the gd_variable function above or call gd_fixed with a different learning rate.
+    w2 = gd_variable(J, w2, lr, i)
+    
+    # Only compute the loss every m iterations.
+    if np.mod(iterations, m) == 0: 
+
+        # TO DO: Compute the training and validation loss of the parameters found with the fixed learning rate.
+        train_loss_fixed[i//m] = loss(w1, train_X, train_y)
+        val_loss_fixed[i//m] = loss(w1, val_X, val_y)
+        
+        # TO DO: Compute the training and validation loss of the parameters found with a variable learning rate.
+        train_loss_var[i//m] = loss(w2, train_X, train_y)
+        val_loss_var[i//m] = loss(w2, val_X, val_y)
+
+        
+## Plotting starts here.  Nothing to implement.
+its = np.arange(1, iterations + 1, m)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (10, 4))
+
+ax1.semilogy(its, train_loss_fixed, 'b-', label = 'Train')
+ax1.semilogy(its, val_loss_fixed, 'r-', label = 'Val')
+ax1.set_xlabel('Iteration')
+ax1.set_ylabel('Loss')
+ax1.set_title('GD with Fixed Learning Rate')
+ax1.grid()
+ax1.legend()
+
+ax2.semilogy(its, train_loss_var, 'b-', label = 'Train')
+ax2.semilogy(its, val_loss_var, 'r-', label = 'Val')
+ax2.set_xlabel('Iteration')
+ax2.set_ylabel('Loss')
+ax2.set_title('GD with Variable Learning Rate')
+ax2.grid()
+ax2.legend()
+
+plt.tight_layout();
+
+
+
+
+
+C1 = np.zeros((2, 2)) # Confusion matrix for fixed learning rate.
+C2 = np.zeros((2, 2)) # Confusion matrix for variable learning rate.
+N = len(X_test)       # Number of test samples.
+
+
+## TO DO STARTS HERE:
+# define a discriminant function
+def discriminant_fn (X, w):
+  fn_sol = (logistic_unit(X,w)>0.5).astype(int)
+  return fn_sol
+
+fixed_test_y_hat = discriminant_fn(test_X, w1)
+variable_test_y_hat = discriminant_fn(test_X, w2)
+
+FalsePos_f = sum([1 if (i==1) and (j==0)  else 0 for i, j in zip(fixed_test_y_hat, test_y)])
+TruePos_f = sum([1 if (i==1) and (j==1)  else 0 for i, j in zip(fixed_test_y_hat, test_y)])
+FalseNeg_f = sum([1 if (i==0) and (j==1)  else 0 for i, j in zip(fixed_test_y_hat, test_y)])
+TrueNeg_f = sum([1 if (i==0) and (j==0)  else 0 for i, j in zip(fixed_test_y_hat, test_y)])
+
+FalsePos_v = sum([1 if (i==1) and (j==0)  else 0 for i, j in zip(variable_test_y_hat, test_y)])
+TruePos_v = sum([1 if (i==1) and (j==1)  else 0 for i, j in zip(variable_test_y_hat, test_y)])
+FalseNeg_v = sum([1 if (i==0) and (j==1)  else 0 for i, j in zip(variable_test_y_hat, test_y)])
+TrueNeg_v = sum([1 if (i==0) and (j==0)  else 0 for i, j in zip(variable_test_y_hat, test_y)])
+
+# Compute the accuracy         
+acc1 = (TruePos_f + TrueNeg_f)/N
+acc2 = (TruePos_v + TrueNeg_v) / N
+
+#update the C value
+C1 = [[TrueNeg_f, FalseNeg_f],
+    [FalsePos_f, TruePos_f]]
+C2 = [[TrueNeg_v, FalseNeg_v],
+    [FalsePos_v, TruePos_v]]
+
+# TO DO ENDS HERE.
+print("C_1 = ")
+print(C1)
+print("C_2 = ")
+print(C2)
+print('Fixed Learning Rate Accuracy    = {:0.1f}%'.format(100 * acc1))
+print('Variable Learning Rate Accuracy = {:0.1f}%'.format(100 * acc2))
+
+
+
+
+
